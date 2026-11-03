@@ -1,6 +1,7 @@
 package com.roomready.room;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -17,6 +18,11 @@ public class HousekeeperRepository {
 
     public HousekeeperRepository(JdbcClient jdbc) {
         this.jdbc = jdbc;
+    }
+
+    public Optional<Row> one(long propertyId, String id) {
+        return jdbc.sql("SELECT id, name FROM housekeepers WHERE property_id = ? AND id = ?").params(propertyId, id)
+                .query(Row.class).optional();
     }
 
     public List<Row> all(long propertyId) {
