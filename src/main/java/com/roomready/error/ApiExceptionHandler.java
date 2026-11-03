@@ -4,6 +4,8 @@ import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.TypeMismatchException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -24,10 +26,13 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 /**
  * The one place that turns errors into a ProblemDetail (application/problem+json). The base class already answers
  * Spring's own errors - an unknown path, a wrong method - as ProblemDetails; this adds the domain refusals and the
- * requests that are not valid: a bad query value, a body that fails Bean Validation, a body Jackson cannot read.
+ * requests that are not valid: a bad query value, a body that fails Bean Validation, a body Jackson cannot read -
+ * and anything else that goes wrong.
  */
 @RestControllerAdvice
 public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
     @ExceptionHandler(DomainException.class)
     public ProblemDetail refusal(DomainException e) {
@@ -36,6 +41,16 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         problem.setTitle(e.title());
         e.properties().forEach(problem::setProperty);
         return problem;
+    }
+
+    /**
+     * Anything else is a 500 ProblemDetail too (every error is one), with a generic detail - never the
+     * exception's message - and the exception in the log.
+     */
+    @ExceptionHandler(Exception.class)
+    public ProblemDetail unexpected(Exception e) {
+        log.error("unexpected error", e);
+        return ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "Something went wrong on our side");
     }
 
     /**  A query value that does not fit its type - ?state=painting, ?floor=x - is 400 /errors/validation.  */

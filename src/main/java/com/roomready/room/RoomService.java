@@ -62,7 +62,8 @@ public class RoomService {
      * Derived on every read. Out of order overrides all; a room is occupied while its latest stay has no checkout,
      * dirty once it has, and then assigned, cleaning or to inspect by the stamps of that stay's assignment - which,
      * while it is open, also gives who is on the room and for how many minutes it has been in this state. A failed
-     * inspection closes the assignment: the room is dirty again until the next one.
+     * inspection closes the assignment: the room is dirty again until the next one; a passed one closes it
+     * with the room ready.
      */
     private RoomView view(RoomRepository.Row row) {
         RoomState state = state(row);
@@ -88,6 +89,9 @@ public class RoomService {
         }
         if (row.assignedAt() == null || row.failed()) {
             return RoomState.dirty;
+        }
+        if (row.passed()) {
+            return RoomState.ready;
         }
         if (row.startedAt() == null) {
             return RoomState.assigned;
