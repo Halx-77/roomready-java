@@ -19,13 +19,17 @@ public class RoomService {
     private final PropertyRepository properties;
     private final RoomRepository rooms;
     private final HousekeeperRepository housekeepers;
+    private final StayRepository stays;
+    private final EventLog events;
     private final Clock clock;
 
     public RoomService(PropertyRepository properties, RoomRepository rooms, HousekeeperRepository housekeepers,
-                       Clock clock) {
+                       StayRepository stays, EventLog events, Clock clock) {
         this.properties = properties;
         this.rooms = rooms;
         this.housekeepers = housekeepers;
+        this.stays = stays;
+        this.events = events;
         this.clock = clock;
     }
 
@@ -44,7 +48,19 @@ public class RoomService {
         return view(rooms.one(propertyId(property), no).orElseThrow(() -> new NoSuchRoom(property, no)));
     }
 
-    /**  Every housekeeper, with the room of the open assignment they hold (a room assigned, cleaning or to inspect).  */
+    /**
+     * A room's day: the events of one stay - by default the current one. A stay that is not this room's, or not a
+     * stay at all, has no events here.
+     */
+    public HistoryView history(String property, String no, String stay) {
+        long propertyId = propertyId(property);
+        room(property, no);
+        long stayId = stay == null ? stays.current(propertyId, no).orElseThrow().id()
+                : StayIds.parse(stay).orElse(0L);
+        return new HistoryView(no, events.forStay(propertyId, no, stayId));
+    }
+
+    /**  Every housekeeper, with the room of an open assignment they hold (a room assigned, cleaning or to inspect).  */
     public HousekeepersView housekeepers(String property) {
         long propertyId = propertyId(property);
         Map<String, String> open = rooms.all(propertyId).stream()
