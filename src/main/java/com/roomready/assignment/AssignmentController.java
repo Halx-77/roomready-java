@@ -67,7 +67,8 @@ public class AssignmentController {
     }
 
     @PostMapping("/assignments/{assignmentId}/finish")
-    @Operation(summary = "Finish the clean: its minutes are stamped and the room waits for inspection")
+    @Operation(summary = "Finish the clean: its minutes are stamped; the room waits for inspection, or is ready at"
+            + " once when its type needs none")
     @ApiResponse(responseCode = "200", description = "Finished")
     @ApiResponse(responseCode = "404", description = "No such assignment",
             content = @Content(mediaType = ProblemExamples.PROBLEM,
