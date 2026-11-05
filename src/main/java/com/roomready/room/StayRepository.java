@@ -42,8 +42,15 @@ public class StayRepository {
     }
 
     /** The guest leaves; the next guest's arrival, when the desk knows it, is kept for the readiness margin.  */
-    public void checkOut(long stayId, Instant at, Instant arrivalAt) {
-        jdbc.sql("UPDATE stays SET checked_out_at = ?, arrival_at = ? WHERE id = ?").params(at, arrivalAt, stayId)
+        public void checkOut(long stayId, Instant at, Instant arrivalAt) {
+        jdbc.sql("""
+                UPDATE stays 
+                SET checked_out_at = :at, arrival_at = :arrivalAt 
+                WHERE id = :stayId
+                """)
+                .param("at", at)
+                .param("arrivalAt", arrivalAt)
+                .param("stayId", stayId)
                 .update();
     }
 }

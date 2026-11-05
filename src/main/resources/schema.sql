@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS room_readiness (
 CREATE TABLE IF NOT EXISTS events (
     id              BIGINT                    AUTO_INCREMENT PRIMARY KEY,
     property_id     BIGINT                    NOT NULL REFERENCES properties (id),
-    room_id         BIGINT                    NOT NULL REFERENCES rooms (id),
+    room VARCHAR(50) NOT NULL,
     stay_id         BIGINT                    NOT NULL REFERENCES stays (id),
     assignment_id   BIGINT                    REFERENCES assignments (id),
     kind            VARCHAR(12)               NOT NULL,

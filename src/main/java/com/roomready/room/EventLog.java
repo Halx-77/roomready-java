@@ -3,71 +3,91 @@ package com.roomready.room;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiFunction;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.stereotype.Repository;
+import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * The append-only log. It can add an event and read a stay's events - nothing else, so nothing in the app can
- * change or remove one. Called inside the transaction of the change it records, so a rolled-back change leaves no
- * event behind. Every event names who did it; the facts are ids and numbers, never the guest.
+ * Writes each event to the events table and to the log.
+ * The facts are ids and numbers, never the guest.
+ * Every event also leaves one log line on stdout - its kind, the room, who, and its facts.
  */
-@Repository
+@Component
 public class EventLog {
 
-    /** Who acts when nobody logs in.  */
-    public static final String FRONT_DESK = "front-desk";
     public static final String SUPERVISOR = "supervisor";
+    public static final String FRONT_DESK = "front-desk";
 
-    private record Row(Instant at, String kind, String data) {
+    public record Row(long id, String kind, String room, String actorId, Map<String, Object> facts) {
     }
+
+    private static final Logger log = LoggerFactory.getLogger("com.roomready.events");
 
     private final JdbcClient jdbc;
-    private final ObjectMapper json;
+    private final ObjectMapper mapper = new ObjectMapper();
 
-    public EventLog(JdbcClient jdbc, ObjectMapper json) {
+    public EventLog(JdbcClient jdbc) {
         this.jdbc = jdbc;
-        this.json = json;
     }
 
-    /** One event of a room's stay; assignmentId is null for the checkout.  */
-    public void append(long propertyId, String room, long stayId, Long assignmentId, String kind, Instant at,
-                       String actorId, Map<String, Object> facts) {
-        jdbc.sql("""
-                        INSERT INTO events (property_id, room_id, stay_id, assignment_id, kind, at, actor_id, data)
-                        SELECT ?, id, ?, ?, ?, ?, ?, ? FROM rooms WHERE property_id = ? AND no = ?""")
-                .params(propertyId, stayId, assignmentId, kind, at, actorId, write(facts), propertyId, room)
-                .update();
+        public void append(long propertyId, String room, long stayId, long assignmentId,
+                       String kind, Instant at, String actorId, Map<String, ?> facts) {
+        try {
+            String dataJson = mapper.writeValueAsString(facts != null ? facts : Map.of());
+            Long safeAssignmentId = assignmentId == 0 ? null : assignmentId;
+            
+            jdbc.sql("""
+                    INSERT INTO events (property_id, room, stay_id, assignment_id, kind, at, actor_id, data)
+                    VALUES (:propertyId, :room, :stayId, :assignmentId, :kind, :at, :actorId, :data)
+                    """)
+                    .param("propertyId", propertyId)
+                    .param("room", room) // <--- THIS MUST BE "room", NOT "roomId"
+                    .param("stayId", stayId)
+                    .param("assignmentId", safeAssignmentId) 
+                    .param("kind", kind)
+                    .param("at", at.atOffset(java.time.ZoneOffset.UTC)) 
+                    .param("actorId", actorId)
+                    .param("data", dataJson)
+                    .update();
+            
+            log.info("event kind={} room={} actor={} facts={}", kind, room, actorId, facts);
+        } catch (Exception e) {
+            log.error("FAILED TO APPEND EVENT", e); 
+            throw new RuntimeException("Failed to append event", e);
+        }
     }
 
-    /** A room's events during one stay, in at order.  */
-    public List<EventView> forStay(long propertyId, String room, long stayId) {
+    public <T> List<T> forStay(long propertyId, String room, long stayId, BiFunction<Row, Instant, T> mapperFunc) {
         return jdbc.sql("""
-                        SELECT e.at, e.kind, e.data FROM events e JOIN rooms r ON r.id = e.room_id
-                        WHERE e.property_id = ? AND r.no = ? AND e.stay_id = ? ORDER BY e.at, e.id""")
-                .params(propertyId, room, stayId)
-                .query(Row.class).list().stream()
-                .map(r -> new EventView(r.at(), r.kind(), read(r.data())))
-                .toList();
-    }
+                SELECT id, kind, room, actor_id, at, data
+                FROM events
+                WHERE property_id = :propertyId AND room = :room AND stay_id = :stayId
+                ORDER BY id
+                """)
+                .param("propertyId", propertyId)
+                .param("room", room)
+                .param("stayId", stayId)
+                .query((rs, n) -> {
+                    try {
+                        String dataJson = rs.getString("data"); // <--- Changed to "data"
+                        Map<String, Object> facts = dataJson == null || dataJson.isBlank()
+                                ? Map.of()
+                                : mapper.readValue(dataJson, new TypeReference<>() {});
 
-    private String write(Map<String, Object> facts) {
-        try {
-            return json.writeValueAsString(facts);
-        } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException("event facts must be JSON", e);
-        }
-    }
-
-    private Map<String, Object> read(String data) {
-        try {
-            return json.readValue(data, new TypeReference<Map<String, Object>>() { });
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("an events row holds data that is not JSON", e);
-        }
+                        Row row = new Row(rs.getLong("id"), rs.getString("kind"), rs.getString("room"), rs.getString("actor_id"), facts);
+                        Instant at = rs.getTimestamp("at").toInstant();
+                        return mapperFunc.apply(row, at);
+                    } catch (JsonProcessingException e) {
+                        throw new RuntimeException("Failed to deserialize data", e);
+                    }
+                })
+                .list();
     }
 }

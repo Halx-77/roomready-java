@@ -61,7 +61,8 @@ public class RoomService {
         room(property, no);
         long stayId = stay == null ? stays.current(propertyId, no).orElseThrow().id()
                 : StayIds.parse(stay).orElse(0L);
-        return new HistoryView(no, events.forStay(propertyId, no, stayId));
+        return new HistoryView(no, events.forStay(propertyId, no, stayId, (row, at) -> 
+        new EventView(at, row.kind(), (Map<String, Object>) (Map<?, ?>) row.facts())));
     }
 
     /**  Every housekeeper, with the room of an open assignment they hold (a room assigned, cleaning or to inspect).  */
@@ -101,7 +102,7 @@ public class RoomService {
                 (int) Duration.between(since, clock.instant()).toMinutes());
     }
 
-    private RoomState state(RoomRepository.Row row) {
+        private RoomState state(RoomRepository.Row row) {
         if (row.outOfOrder()) {
             return RoomState.out_of_order;
         }
@@ -120,7 +121,13 @@ public class RoomService {
         if (row.finishedAt() == null) {
             return RoomState.cleaning;
         }
-        return settings.inspectionRequiredFor().contains(row.type()) ? RoomState.toinspect : RoomState.ready;
+        
+        // FIX: Compare the String list with the enum's name (case-insensitive)
+        String typeStr = row.type().name();
+        boolean requiresInspection = settings.inspectionRequiredFor().stream()
+                .anyMatch(t -> t.trim().equalsIgnoreCase(typeStr));
+
+        return requiresInspection ? RoomState.toinspect : RoomState.ready;
     }
 
     private static int count(List<RoomView> shown, RoomState state) {

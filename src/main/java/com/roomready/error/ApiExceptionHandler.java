@@ -50,12 +50,19 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
      * exception's message or a stack trace - and its type and the request's id, which the log line
      * carries too.
      */
-    @ExceptionHandler(Exception.class)
+        @ExceptionHandler(Exception.class)
     public ProblemDetail unexpected(Exception e) {
         String requestId = MDC.get(RequestIdFilter.KEY);
         log.error("unexpected error requestId={}", requestId, e);
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR,
-                "Something went wrong on our side; quote the request id if you report it");
+        
+        Throwable root = e;
+        while (root.getCause() != null) {
+            root = root.getCause();
+        }
+        
+        String debugDetail = root.getClass().getSimpleName() + ": " + root.getMessage();
+
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "DEBUG: " + debugDetail);
         problem.setType(URI.create("/errors/internal"));
         problem.setTitle("Internal error");
         problem.setProperty("requestId", requestId);

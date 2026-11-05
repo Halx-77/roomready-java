@@ -102,7 +102,13 @@ public class AssignmentService {
         long propertyId = propertyId(property);
         events.append(propertyId, a.room(), a.stayId(), a.id(), "finished", now, a.housekeeperId(),
                 Map.of("cleanMinutes", cleanMinutes));
-        if (!settings.inspectionRequiredFor().contains(rooms.room(property, a.room()).type())) {
+        
+        // Only stamp ready if the room type does NOT require an inspection
+        String roomType = rooms.room(property, a.room()).type().name();
+        boolean requiresInspection = settings.inspectionRequiredFor().stream()
+                .anyMatch(t -> t.trim().equalsIgnoreCase(roomType));
+
+        if (!requiresInspection) {
             Map<String, Object> facts = new HashMap<>();
             readiness.stamp(propertyId, a.room(), now,
                     stays.current(propertyId, a.room()).orElseThrow().arrivalAt(), facts);

@@ -1,7 +1,9 @@
 package com.roomready.config;
 
+import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.roomready.room.RoomType;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -18,10 +20,19 @@ public class SettingsController {
         this.settings = settings;
     }
 
-    @GetMapping("/settings")
-    @Operation(summary = "The room types that need inspection, and when a clean counts as stalled")
-    @ApiResponse(responseCode = "200", description = "The current settings")
+        @GetMapping("/settings")
     public SettingsView settings() {
-        return new SettingsView(settings.inspectionRequiredFor(), settings.stallAfterMinutes());
+        List<String> required = settings.inspectionRequiredFor();
+        if (required == null) {
+            required = List.of();
+        }
+
+        return new SettingsView(
+                required.stream()
+                        .map(String::trim) // Just trim spaces, don't force uppercase!
+                        .map(RoomType::valueOf)
+                        .toList(), 
+                settings.stallAfterMinutes()
+        );
     }
 }
