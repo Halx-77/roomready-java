@@ -9,8 +9,6 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 
-import com.roomready.config.RoomReadySettings;
-
 import com.roomready.error.NoSuchProperty;
 import com.roomready.error.NoSuchRoom;
 
@@ -23,17 +21,15 @@ public class RoomService {
     private final HousekeeperRepository housekeepers;
     private final StayRepository stays;
     private final EventLog events;
-    private final RoomReadySettings settings;
     private final Clock clock;
 
     public RoomService(PropertyRepository properties, RoomRepository rooms, HousekeeperRepository housekeepers,
-                       StayRepository stays, EventLog events, RoomReadySettings settings, Clock clock) {
+                       StayRepository stays, EventLog events, Clock clock) {
         this.properties = properties;
         this.rooms = rooms;
         this.housekeepers = housekeepers;
         this.stays = stays;
         this.events = events;
-        this.settings = settings;
         this.clock = clock;
     }
 
@@ -61,8 +57,7 @@ public class RoomService {
         room(property, no);
         long stayId = stay == null ? stays.current(propertyId, no).orElseThrow().id()
                 : StayIds.parse(stay).orElse(0L);
-        return new HistoryView(no, events.forStay(propertyId, no, stayId, (row, at) -> 
-        new EventView(at, row.kind(), (Map<String, Object>) (Map<?, ?>) row.facts())));
+        return new HistoryView(no, events.forStay(propertyId, no, stayId));
     }
 
     /**  Every housekeeper, with the room of an open assignment they hold (a room assigned, cleaning or to inspect).  */
@@ -84,8 +79,7 @@ public class RoomService {
      * dirty once it has, and then assigned, cleaning or to inspect by the stamps of that stay's assignment - which,
      * while it is open, also gives who is on the room and for how many minutes it has been in this state. A failed
      * inspection closes the assignment: the room is dirty again until the next one; a passed one closes it
-     * with the room ready. A room whose type needs no inspection is ready as soon as its clean is
-     * finished.
+     * with the room ready.
      */
     private RoomView view(RoomRepository.Row row) {
         RoomState state = state(row);
@@ -102,7 +96,7 @@ public class RoomService {
                 (int) Duration.between(since, clock.instant()).toMinutes());
     }
 
-        private RoomState state(RoomRepository.Row row) {
+    private static RoomState state(RoomRepository.Row row) {
         if (row.outOfOrder()) {
             return RoomState.out_of_order;
         }
@@ -118,16 +112,7 @@ public class RoomService {
         if (row.startedAt() == null) {
             return RoomState.assigned;
         }
-        if (row.finishedAt() == null) {
-            return RoomState.cleaning;
-        }
-        
-        // FIX: Compare the String list with the enum's name (case-insensitive)
-        String typeStr = row.type().name();
-        boolean requiresInspection = settings.inspectionRequiredFor().stream()
-                .anyMatch(t -> t.trim().equalsIgnoreCase(typeStr));
-
-        return requiresInspection ? RoomState.toinspect : RoomState.ready;
+        return row.finishedAt() == null ? RoomState.cleaning : RoomState.toinspect;
     }
 
     private static int count(List<RoomView> shown, RoomState state) {

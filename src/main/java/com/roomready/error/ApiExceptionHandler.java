@@ -6,7 +6,6 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 import org.springframework.beans.TypeMismatchException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -23,7 +22,6 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import com.fasterxml.jackson.databind.JsonMappingException;
-import com.roomready.config.RequestIdFilter;
 
 /**
  * The one place that turns errors into a ProblemDetail (application/problem+json). The base class already answers
@@ -47,26 +45,12 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
     /**
      * Anything else is a 500 ProblemDetail too (every error is one), with a generic detail - never the
-     * exception's message or a stack trace - and its type and the request's id, which the log line
-     * carries too.
+     * exception's message - and the exception in the log.
      */
-        @ExceptionHandler(Exception.class)
+    @ExceptionHandler(Exception.class)
     public ProblemDetail unexpected(Exception e) {
-        String requestId = MDC.get(RequestIdFilter.KEY);
-        log.error("unexpected error requestId={}", requestId, e);
-        
-        Throwable root = e;
-        while (root.getCause() != null) {
-            root = root.getCause();
-        }
-        
-        String debugDetail = root.getClass().getSimpleName() + ": " + root.getMessage();
-
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "DEBUG: " + debugDetail);
-        problem.setType(URI.create("/errors/internal"));
-        problem.setTitle("Internal error");
-        problem.setProperty("requestId", requestId);
-        return problem;
+        log.error("unexpected error", e);
+        return ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "Something went wrong on our side");
     }
 
     /**  A query value that does not fit its type - ?state=painting, ?floor=x - is 400 /errors/validation.  */

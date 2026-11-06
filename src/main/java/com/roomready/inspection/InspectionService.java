@@ -1,6 +1,7 @@
 package com.roomready.inspection;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
@@ -33,14 +34,14 @@ public class InspectionService {
     private final HousekeeperRepository housekeepers;
     private final AssignmentRepository assignments;
     private final InspectionRepository inspections;
-    private final ReadinessService readiness;
+    private final ReadinessRepository readiness;
     private final StayRepository stays;
     private final EventLog events;
     private final Clock clock;
 
     public InspectionService(PropertyRepository properties, RoomService rooms, HousekeeperRepository housekeepers,
                              AssignmentRepository assignments, InspectionRepository inspections,
-                             ReadinessService readiness, StayRepository stays, EventLog events, Clock clock) {
+                             ReadinessRepository readiness, StayRepository stays, EventLog events, Clock clock) {
         this.properties = properties;
         this.rooms = rooms;
         this.housekeepers = housekeepers;
@@ -75,9 +76,23 @@ public class InspectionService {
         StayRepository.Row stay = stays.current(propertyId, room).orElseThrow();
         Map<String, Object> facts = new LinkedHashMap<>(Map.of("inspector", who.id(), "result", result.name()));
         boolean pass = result == Result.pass;
-        Integer margin = pass ? readiness.stamp(propertyId, room, now, stay.arrivalAt(), facts) : null;
+        Integer margin = pass ? ready(propertyId, room, now, stay.arrivalAt(), facts) : null;
         events.append(propertyId, room, stay.id(), clean.id(), "inspected", now, who.id(), facts);
         return new InspectionResponse(InspectionIds.format(id), room, clean.cleanedBy(), who.name(), result,
                 rooms.room(property, room).state(), pass ? now : null, pass ? stay.arrivalAt() : null, margin);
+    }
+
+    /**
+     * A pass stamps the room's readiness - when, the next guest's arrival, the margin between (null when no
+     * arrival is known) - and adds the margin and the arrival to the event's facts.
+     */
+    private Integer ready(long propertyId, String room, Instant now, Instant arrivalAt, Map<String, Object> facts) {
+        Integer margin = arrivalAt == null ? null : (int) Duration.between(now, arrivalAt).toMinutes();
+        readiness.insert(propertyId, room, now, arrivalAt, margin);
+        if (arrivalAt != null) {
+            facts.put("marginMinutes", margin);
+            facts.put("arrivalAt", arrivalAt.toString());
+        }
+        return margin;
     }
 }

@@ -57,7 +57,7 @@ public class CheckoutService {
             throw new InvalidRequest("at", "must not be before check-in at " + stay.checkedInAt());
         }
         stays.checkOut(stay.id(), at, arrivalAt);
-        events.append(propertyId, room, stay.id(), 0, "checked_out", at, EventLog.FRONT_DESK, Map.of());
+        events.append(propertyId, room, stay.id(), null, "checked_out", at, EventLog.FRONT_DESK, Map.of());
         return new CheckoutResponse(StayIds.format(stay.id()), room, at, RoomState.dirty);
     }
 }
